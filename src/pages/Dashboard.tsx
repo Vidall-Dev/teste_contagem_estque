@@ -1,13 +1,40 @@
+import { useEffect, useState } from 'react';
 import MainLayout from '../layouts/MainLayout';
 import { QrCode, History, ListTodo, ChevronRight, Truck, Calendar } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { supabase } from '../lib/supabase';
+
+interface Batch {
+  id: string;
+  dt_number: string;
+  operator_name: string;
+  started_at: string;
+  status: string;
+}
 
 export default function Dashboard() {
-  const lastCounts = [
-    { id: '6000804856', driver: 'Magno Leite dos Santos', date: '03/02/2026', plate: 'PDW-7188', status: [1, 1, 1, 0] },
-    { id: '6000804857', driver: 'Toni Vitor Ribeiro Santana', date: '03/02/2026', plate: 'QAG-5B11', status: [1, 1, 0, 0] },
-    { id: '6000804B62', driver: 'Nilson Santana De Souza', date: '03/02/2026', plate: 'QAG-9C81', status: [2, 2, 2, 2] },
-  ];
+  const [lastCounts, setLastCounts] = useState<Batch[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchBatches();
+  }, []);
+
+  async function fetchBatches() {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('inventory_batches')
+      .select('*')
+      .order('started_at', { ascending: false })
+      .limit(5);
+
+    if (error) {
+      console.error('Error fetching batches:', error);
+    } else {
+      setLastCounts(data || []);
+    }
+    setLoading(false);
+  }
 
   return (
     <MainLayout title="LogiCheck" subtitle="Gestão de Estoque">
@@ -25,7 +52,11 @@ export default function Dashboard() {
           </div>
           <div>
             <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Última Atividade</div>
-            <div className="text-sm font-semibold text-gray-700 dark:text-gray-200">DT 6000804863 • 03/02/2026</div>
+            <div className="text-sm font-semibold text-gray-700 dark:text-gray-200">
+              {lastCounts.length > 0
+                ? `DT ${lastCounts[0].dt_number} • ${new Date(lastCounts[0].started_at).toLocaleDateString('pt-BR')}`
+                : 'Nenhuma atividade recente'}
+            </div>
           </div>
         </div>
       </div>
@@ -50,8 +81,13 @@ export default function Dashboard() {
         </div>
 
         <div className="grid gap-4">
-          {lastCounts.map((count) => (
-            <div
+          {loading ? (
+            <div className="text-center p-10 text-gray-500">Carregando contagens...</div>
+          ) : lastCounts.length === 0 ? (
+            <div className="text-center p-10 text-gray-500">Nenhuma contagem encontrada.</div>
+          ) : lastCounts.map((count) => (
+            <Link
+              to={`/inventory/execution?id=${count.id}`}
               key={count.id}
               className="bg-white dark:bg-[#2d1a1a] border border-gray-100 dark:border-gray-800 rounded-xl p-5 flex flex-col sm:flex-row items-start sm:items-center gap-4 hover:shadow-hover hover:border-primary/20 transition-all cursor-pointer group"
             >
@@ -61,37 +97,30 @@ export default function Dashboard() {
 
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-3 mb-1">
-                  <span className="font-bold text-lg text-gray-900 dark:text-white">DT {count.id}</span>
+                  <span className="font-bold text-lg text-gray-900 dark:text-white">DT {count.dt_number}</span>
                   <div className="hidden sm:flex gap-1">
-                    {count.status.map((s, i) => (
-                      <span
-                        key={i}
-                        className={`w-2 h-2 rounded-full ${
-                          s === 2 ? 'bg-green-500' : s === 1 ? 'bg-red-500' : 'bg-gray-200 dark:bg-gray-700'
-                        }`}
-                      ></span>
-                    ))}
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                      count.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'
+                    }`}>
+                      {count.status === 'completed' ? 'Concluída' : 'Em Andamento'}
+                    </span>
                   </div>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500 dark:text-gray-400">
                   <span className="flex items-center gap-1">
-                    <Calendar className="w-4 h-4" /> {count.date}
-                  </span>
-                  <span className="text-gray-300 dark:text-gray-700 hidden sm:inline">|</span>
-                  <span className="bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded text-xs font-medium text-gray-600 dark:text-gray-300">
-                    # {count.plate}
+                    <Calendar className="w-4 h-4" /> {new Date(count.started_at).toLocaleDateString('pt-BR')}
                   </span>
                 </div>
                 <div className="text-sm text-gray-600 dark:text-gray-300 mt-1 truncate">
-                  Motorista: {count.driver}
+                  Operador: {count.operator_name}
                 </div>
               </div>
 
               <div className="hidden sm:block">
                 <ChevronRight className="w-6 h-6 text-gray-300 group-hover:text-primary transition-colors" />
               </div>
-            </div>
+            </Link>
           ))}
         </div>
       </div>

@@ -1,61 +1,133 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Header from '../components/Header';
 import Button from '../components/Button';
-import { Search, QrCode, Filter, Minus, Plus, ChevronDown, CheckCircle, CloudOff, EyeOff } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Search, QrCode, Filter, Minus, Plus, ChevronDown, CheckCircle, EyeOff } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { supabase } from '../lib/supabase';
+
+interface InventoryItem {
+  id: string;
+  product: {
+    sku: string;
+    name: string;
+  };
+  pallets: number;
+  lastros: number;
+  pacs: number;
+  units: number;
+  total_calculated: number;
+  status: string;
+}
 
 export default function InventoryExecution() {
   const navigate = useNavigate();
-  const [expandedId, setExpandedId] = useState<number | null>(1);
+  const [searchParams] = useSearchParams();
+  const batchId = searchParams.get('id');
 
-  const products = [
-    {
-      id: 1,
-      sku: '10293',
-      name: 'CERV ITA PILS 350ML - LATA',
-      desc: 'CX C/ 12 UN • Estoque Teórico: 1450',
-      status: 'Em Andamento',
-      counts: { pallets: 2, lastros: 4, pacs: 0, units: 5 },
-      total: 385
-    },
-    {
-      id: 2,
-      sku: '88210',
-      name: 'REFRIG COCA COLA 2L',
-      desc: 'Total: 890 un',
-      status: 'Contado',
-      counts: { pallets: 0, lastros: 0, pacs: 0, units: 0 },
-      total: 890
-    },
-    {
-      id: 3,
-      sku: '32911',
-      name: 'AGUA MINERAL 500ML S/ GAS',
-      desc: 'FARDO C/ 12',
-      status: 'Pendente',
-      counts: { pallets: 0, lastros: 0, pacs: 0, units: 0 },
-      total: 0
+  const [items, setItems] = useState<InventoryItem[]>([]);
+  const [batch, setBatch] = useState<any>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (batchId) {
+      fetchBatchData(batchId);
     }
-  ];
+  }, [batchId]);
+
+  async function fetchBatchData(id: string) {
+    setLoading(true);
+
+    const { data: batchData } = await supabase
+      .from('inventory_batches')
+      .select('*, stocks(*)')
+      .eq('id', id)
+      .single();
+
+    setBatch(batchData);
+
+    let { data: itemsData } = await supabase
+      .from('inventory_items')
+      .select('*, product:products(sku, name)')
+      .eq('batch_id', id);
+
+    // If no items, populate from products (for demo/initial setup)
+    if (!itemsData || itemsData.length === 0) {
+      const { data: allProducts } = await supabase.from('products').select('*');
+      if (allProducts && allProducts.length > 0) {
+        const newItems = allProducts.map(p => ({
+          batch_id: id,
+          product_id: p.id,
+          status: 'pending'
+        }));
+        await supabase.from('inventory_items').insert(newItems);
+
+        // Fetch again
+        const { data: refreshedItems } = await supabase
+          .from('inventory_items')
+          .select('*, product:products(sku, name)')
+          .eq('batch_id', id);
+        itemsData = refreshedItems;
+      }
+    }
+
+    setItems(itemsData || []);
+    setLoading(false);
+  }
+
+  const updateCount = async (itemId: string, field: string, value: number) => {
+    const item = items.find(i => i.id === itemId);
+    if (!item) return;
+
+    const newCounts = {
+      ...item,
+      [field]: Math.max(0, value)
+    };
+
+    // Recalculate total if we had logistical rules, but here let's just use a simple sum or logic
+    // For now, let's just update the state locally and then save
+    setItems(items.map(i => i.id === itemId ? newCounts : i));
+
+    await supabase.from('inventory_items').update({
+      [field]: Math.max(0, value),
+      status: 'counting'
+    }).eq('id', itemId);
+  };
+
+  const handleFinalize = async () => {
+    if (batchId) {
+      await supabase.from('inventory_batches').update({
+        status: 'completed',
+        finished_at: new Date().toISOString()
+      }).eq('id', batchId);
+      navigate('/inventory/finalization');
+    }
+  };
 
   return (
     <div className="bg-background-light dark:bg-background-dark min-h-screen pb-32 transition-colors duration-200">
-      <Header title="Contagem #1234" subtitle="Setor de Bebidas • 12 Out 2023" showBack />
+      <Header
+        title={batch ? `Contagem #${batch.dt_number}` : 'Carregando...'}
+        subtitle={batch ? `${batch.stocks?.name} • ${new Date(batch.started_at).toLocaleDateString('pt-BR')}` : ''}
+        showBack
+      />
 
-      {/* Status Bar (Screen 2 style) */}
       <div className="bg-gray-50 dark:bg-gray-800/50 px-4 py-1.5 flex justify-between items-center border-b border-gray-100 dark:border-gray-800">
         <div className="flex items-center gap-2">
           <span className="flex h-2 w-2 rounded-full bg-orange-500"></span>
-          <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Offline</span>
+          <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Online (Supabase)</span>
         </div>
         <div className="flex items-center gap-2">
-          <EyeOff className="w-3 h-3 text-gray-400" />
-          <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Contagem Cega</span>
+          {batch?.report_type === 'blind' && (
+            <>
+              <EyeOff className="w-3 h-3 text-gray-400" />
+              <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Contagem Cega</span>
+            </>
+          )}
         </div>
       </div>
 
       <main className="max-w-4xl mx-auto px-4 py-6">
-        {/* Search Area */}
         <div className="sticky top-20 z-20 mb-6 bg-background-light/95 dark:bg-background-dark/95 backdrop-blur-sm py-2">
           <div className="flex gap-3">
             <div className="relative flex-1 group">
@@ -74,96 +146,79 @@ export default function InventoryExecution() {
               </div>
             </div>
           </div>
-
-          {/* Quick Filters */}
-          <div className="flex gap-2 mt-4 overflow-x-auto pb-2 scrollbar-hide">
-            {['Todos', 'Pendentes (32)', 'Contados (13)', 'Divergentes (2)'].map((filter, i) => (
-              <button
-                key={i}
-                className={`px-4 py-1.5 text-sm font-medium rounded-full whitespace-nowrap transition-all ${
-                  i === 0
-                    ? 'bg-primary text-white shadow-lg shadow-primary/20'
-                    : 'bg-white dark:bg-[#2d1a1a] border border-gray-100 dark:border-gray-800 text-gray-500 hover:text-gray-900 dark:hover:text-white'
-                }`}
-              >
-                {filter}
-              </button>
-            ))}
-          </div>
         </div>
 
-        {/* Product List */}
         <div className="space-y-4">
-          {products.map((product) => (
+          {loading ? (
+            <div className="text-center p-10 text-gray-500">Carregando itens...</div>
+          ) : items.map((item) => (
             <div
-              key={product.id}
+              key={item.id}
               className={`bg-white dark:bg-[#2d1a1a] rounded-xl overflow-hidden transition-all duration-300 border ${
-                expandedId === product.id
+                expandedId === item.id
                   ? 'shadow-hover border-primary/20 ring-2 ring-primary/5'
                   : 'shadow-soft border-transparent hover:border-gray-200 dark:hover:border-gray-800'
               }`}
             >
               <div
                 className="p-5 cursor-pointer"
-                onClick={() => setExpandedId(expandedId === product.id ? null : product.id)}
+                onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-gray-100 dark:bg-gray-800 text-gray-500 uppercase tracking-wider">
-                        SKU: {product.sku}
+                        SKU: {item.product.sku}
                       </span>
-                      {product.status === 'Em Andamento' && (
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 uppercase tracking-wider">
-                          Em Andamento
-                        </span>
-                      )}
-                      {product.status === 'Contado' && (
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 uppercase tracking-wider flex items-center gap-1">
-                          <CheckCircle className="w-3 h-3" /> Contado
-                        </span>
-                      )}
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                        item.status === 'counting' ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-500'
+                      }`}>
+                        {item.status === 'counting' ? 'Em Andamento' : 'Pendente'}
+                      </span>
                     </div>
-                    <h3 className={`text-base font-bold transition-opacity ${product.status === 'Contado' ? 'text-gray-900 dark:text-white opacity-75' : 'text-gray-900 dark:text-white'}`}>
-                      {product.name}
+                    <h3 className="text-base font-bold text-gray-900 dark:text-white">
+                      {item.product.name}
                     </h3>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{product.desc}</p>
                   </div>
-                  <div className={`h-10 w-10 flex items-center justify-center rounded-full bg-gray-50 dark:bg-gray-800 text-gray-400 transition-transform duration-300 ${expandedId === product.id ? 'rotate-180 bg-primary/10 text-primary' : ''}`}>
+                  <div className={`h-10 w-10 flex items-center justify-center rounded-full bg-gray-50 dark:bg-gray-800 text-gray-400 transition-transform duration-300 ${expandedId === item.id ? 'rotate-180 bg-primary/10 text-primary' : ''}`}>
                     <ChevronDown className="w-6 h-6" />
                   </div>
                 </div>
               </div>
 
-              {expandedId === product.id && (
+              {expandedId === item.id && (
                 <div className="p-5 bg-gray-50/50 dark:bg-black/20 border-t border-dashed border-gray-100 dark:border-gray-800">
                   <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                    {['Pallets', 'Lastros', 'Pacs', 'Unidades'].map((label) => (
-                      <div key={label} className="flex flex-col gap-2">
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide ml-1">{label}</label>
+                    {[
+                      { label: 'Pallets', key: 'pallets' },
+                      { label: 'Lastros', key: 'lastros' },
+                      { label: 'Pacs', key: 'pacs' },
+                      { label: 'Unidades', key: 'units' }
+                    ].map((field) => (
+                      <div key={field.key} className="flex flex-col gap-2">
+                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide ml-1">{field.label}</label>
                         <div className="flex items-center bg-white dark:bg-[#1a0c0e] rounded-lg shadow-sm border border-gray-100 dark:border-gray-800 overflow-hidden h-12">
-                          <button className="w-12 h-full flex items-center justify-center text-primary hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                          <button
+                            onClick={() => updateCount(item.id, field.key, (item as any)[field.key] - 1)}
+                            className="w-12 h-full flex items-center justify-center text-primary hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                          >
                             <Minus className="w-5 h-5" />
                           </button>
                           <input
                             type="number"
                             className="flex-1 w-full h-full text-center border-none bg-transparent focus:ring-0 text-gray-900 dark:text-white font-bold text-lg p-0"
-                            defaultValue={product.counts[label.toLowerCase() as keyof typeof product.counts]}
+                            value={(item as any)[field.key]}
+                            onChange={(e) => updateCount(item.id, field.key, parseInt(e.target.value) || 0)}
                           />
-                          <button className="w-12 h-full flex items-center justify-center text-primary hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                          <button
+                            onClick={() => updateCount(item.id, field.key, (item as any)[field.key] + 1)}
+                            className="w-12 h-full flex items-center justify-center text-primary hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                          >
                             <Plus className="w-5 h-5" />
                           </button>
                         </div>
                       </div>
                     ))}
-                  </div>
-                  <div className="mt-5 pt-4 border-t border-gray-200 dark:border-gray-800 flex justify-between items-center">
-                    <span className="text-sm font-medium text-gray-500">
-                      Total calculado: <strong className="text-gray-900 dark:text-white ml-1">{product.total} un</strong>
-                    </span>
-                    <button className="text-xs font-bold text-primary hover:text-red-700 underline underline-offset-2">
-                      Limpar dados
-                    </button>
                   </div>
                 </div>
               )}
@@ -172,26 +227,18 @@ export default function InventoryExecution() {
         </div>
       </main>
 
-      {/* Floating Footer Action */}
       <div className="fixed bottom-0 left-0 w-full z-40">
-        <div className="bg-orange-500 text-white px-4 py-2 flex items-center justify-center gap-2 text-xs font-bold shadow-lg">
-          <CloudOff className="w-4 h-4" />
-          <span>MODO OFFLINE: DADOS SALVOS LOCALMENTE</span>
-        </div>
         <div className="p-4 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md">
           <div className="max-w-4xl mx-auto">
             <Button
               size="xl"
               className="w-full shadow-2xl"
               icon={<CheckCircle className="w-6 h-6" />}
-              onClick={() => navigate('/inventory/finalization')}
+              onClick={handleFinalize}
             >
-              Finalizar Contagem (45)
+              Finalizar Contagem
             </Button>
           </div>
-        </div>
-        <div className="h-1 bg-gray-200 dark:bg-gray-800">
-          <div className="h-full bg-primary w-[45%] transition-all duration-500"></div>
         </div>
       </div>
     </div>

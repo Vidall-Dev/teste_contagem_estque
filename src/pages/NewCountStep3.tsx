@@ -2,15 +2,50 @@ import MainLayout from '../layouts/MainLayout';
 import Card from '../components/Card';
 import { Check, Warehouse, FileText, Play, Smartphone, Laptop, Headphones, ExternalLink } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { supabase } from '../lib/supabase';
 
 export default function NewCountStep3() {
   const navigate = useNavigate();
+  const [loading, setLoading] = useState(false);
+  const [stock, setStock] = useState<any>(null);
+  const [reportType, setReportType] = useState<string | null>(null);
 
-  const recentProducts = [
-    { name: 'Iphone 15 Pro Max 256GB Titanium', sku: 'APPLE-IPH-15PM-256', time: 'Há 5 min', qty: '12 un' },
-    { name: 'MacBook Air M2 13" 8GB/256GB', sku: 'APPLE-MAC-AIR-M2', time: 'Há 12 min', qty: '05 un' },
-    { name: 'AirPods Pro (2nd Generation)', sku: 'APPLE-AIR-PRO-2', time: 'Há 1h', qty: '42 un' },
-  ];
+  useEffect(() => {
+    const stockId = localStorage.getItem('logicheck_new_stock_id');
+    const rType = localStorage.getItem('logicheck_new_report_type');
+    setReportType(rType);
+    if (stockId) fetchStock(stockId);
+  }, []);
+
+  async function fetchStock(id: string) {
+    const { data } = await supabase.from('stocks').select('*').eq('id', id).single();
+    if (data) setStock(data);
+  }
+
+  const handleStart = async () => {
+    setLoading(true);
+    const stockId = localStorage.getItem('logicheck_new_stock_id');
+    const rType = localStorage.getItem('logicheck_new_report_type');
+
+    const { data, error } = await supabase.from('inventory_batches').insert({
+      stock_id: stockId,
+      dt_number: '6000' + Math.floor(Math.random() * 1000000), // Random DT for demo
+      status: 'in_progress',
+      operator_name: 'Fernanda Rodrigues',
+      report_type: rType,
+      started_at: new Date().toISOString()
+    }).select().single();
+
+    if (error) {
+      alert('Erro ao iniciar inventário: ' + error.message);
+      setLoading(false);
+    } else {
+      // In a real app, we'd also populate inventory_items here from a product list
+      // For this demo, let's just navigate
+      navigate(`/inventory/execution?id=${data.id}`);
+    }
+  };
 
   return (
     <MainLayout title="Confirmação e Início" showBack>
@@ -49,7 +84,9 @@ export default function NewCountStep3() {
               </div>
               <div>
                 <span className="block text-sm text-gray-500 dark:text-gray-400 mb-0.5">Depósito Selecionado</span>
-                <span className="block text-lg font-bold text-gray-900 dark:text-white">Depósito Principal</span>
+                <span className="block text-lg font-bold text-gray-900 dark:text-white">
+                  {stock?.name || 'Carregando...'}
+                </span>
               </div>
             </div>
             <div className="flex items-start gap-4">
@@ -58,7 +95,9 @@ export default function NewCountStep3() {
               </div>
               <div>
                 <span className="block text-sm text-gray-500 dark:text-gray-400 mb-0.5">Tipo de Contagem</span>
-                <span className="block text-lg font-bold text-gray-900 dark:text-white">Com Relatório Sistêmico</span>
+                <span className="block text-lg font-bold text-gray-900 dark:text-white">
+                  {reportType === 'import' ? 'Com Relatório Sistêmico' : 'Contagem Cega'}
+                </span>
               </div>
             </div>
           </div>
@@ -67,27 +106,34 @@ export default function NewCountStep3() {
         {/* Action Button */}
         <div className="w-full mb-12">
           <button
-            onClick={() => navigate('/inventory/execution')}
-            className="w-full bg-primary hover:bg-red-700 text-white rounded-2xl py-6 px-4 shadow-lg shadow-primary/25 active:scale-[0.98] transition-all group flex flex-col items-center justify-center gap-3"
+            onClick={handleStart}
+            disabled={loading}
+            className="w-full bg-primary hover:bg-red-700 text-white rounded-2xl py-6 px-4 shadow-lg shadow-primary/25 active:scale-[0.98] transition-all group flex flex-col items-center justify-center gap-3 disabled:opacity-50"
           >
             <div className="w-10 h-10 bg-white rounded-full text-primary flex items-center justify-center group-hover:scale-110 transition-transform">
               <Play className="w-6 h-6 fill-current ml-0.5" />
             </div>
-            <span className="text-xl font-bold uppercase tracking-wide">Iniciar Inventário Agora</span>
+            <span className="text-xl font-bold uppercase tracking-wide">
+              {loading ? 'Iniciando...' : 'Iniciar Inventário Agora'}
+            </span>
           </button>
           <p className="text-center text-xs text-gray-500 dark:text-gray-400 mt-4 px-8 leading-relaxed">
             Ao iniciar, o tempo de operação começará a ser contabilizado para o operador: <strong className="text-gray-700 dark:text-gray-300">Fernanda Rodrigues</strong>
           </p>
         </div>
 
-        {/* Recent Products */}
+        {/* Recent Products (Mocked for UI) */}
         <div className="w-full">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-gray-900 dark:text-white text-lg">Últimos Produtos Contados</h3>
             <span className="text-xs text-gray-400 italic">Depósito Principal</span>
           </div>
           <div className="space-y-3">
-            {recentProducts.map((product, idx) => (
+            {[
+              { name: 'Iphone 15 Pro Max 256GB Titanium', sku: 'APPLE-IPH-15PM-256', time: 'Há 5 min', qty: '12 un' },
+              { name: 'MacBook Air M2 13" 8GB/256GB', sku: 'APPLE-MAC-AIR-M2', time: 'Há 12 min', qty: '05 un' },
+              { name: 'AirPods Pro (2nd Generation)', sku: 'APPLE-AIR-PRO-2', time: 'Há 1h', qty: '42 un' },
+            ].map((product, idx) => (
               <div
                 key={product.sku}
                 className="bg-white dark:bg-[#2d1a1a] rounded-xl p-4 flex items-center gap-4 shadow-sm border border-transparent dark:border-gray-800"

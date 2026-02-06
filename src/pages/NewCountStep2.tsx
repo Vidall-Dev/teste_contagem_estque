@@ -2,9 +2,16 @@ import MainLayout from '../layouts/MainLayout';
 import Button from '../components/Button';
 import { BarChart, EyeOff, Info, ArrowRight, Check } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useState } from 'react';
 
 export default function NewCountStep2() {
   const navigate = useNavigate();
+  const [reportType, setReportType] = useState('import');
+
+  const handleNext = () => {
+    localStorage.setItem('logicheck_new_report_type', reportType);
+    navigate('/new-count/step-3');
+  };
 
   return (
     <MainLayout title="Configuração de Contagem" showBack>
@@ -47,9 +54,15 @@ export default function NewCountStep2() {
         <div className="flex flex-col gap-4 mb-8 w-full">
           {/* Option 1: Import */}
           <label className="cursor-pointer group relative">
-            <input type="radio" name="report_type" defaultChecked className="peer sr-only" />
-            <div className="bg-red-50 dark:bg-red-900/10 p-5 rounded-2xl border-2 border-primary shadow-sm flex items-start gap-4 transition-all hover:shadow-md">
-              <div className="w-12 h-12 rounded-xl bg-red-100 dark:bg-red-900/30 text-primary flex items-center justify-center flex-shrink-0">
+            <input
+              type="radio"
+              name="report_type"
+              checked={reportType === 'import'}
+              onChange={() => setReportType('import')}
+              className="peer sr-only"
+            />
+            <div className={`p-5 rounded-2xl border-2 flex items-start gap-4 transition-all hover:shadow-md ${reportType === 'import' ? 'bg-red-50 dark:bg-red-900/10 border-primary shadow-sm' : 'bg-white dark:bg-[#2d1a1a] border-gray-100 dark:border-gray-800'}`}>
+              <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${reportType === 'import' ? 'bg-red-100 dark:bg-red-900/30 text-primary' : 'bg-gray-100 dark:bg-gray-800 text-gray-400'}`}>
                 <BarChart className="w-6 h-6" />
               </div>
               <div className="flex-1 text-left">
@@ -59,17 +72,23 @@ export default function NewCountStep2() {
                   O sistema apresenta o saldo esperado para conferência imediata.
                 </p>
               </div>
-              <div className="w-6 h-6 rounded-full border-2 border-primary flex items-center justify-center bg-primary">
-                <div className="w-2.5 h-2.5 rounded-full bg-white"></div>
+              <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${reportType === 'import' ? 'border-primary bg-primary' : 'border-gray-300 dark:border-gray-700'}`}>
+                {reportType === 'import' && <div className="w-2.5 h-2.5 rounded-full bg-white"></div>}
               </div>
             </div>
           </label>
 
           {/* Option 2: Blind */}
           <label className="cursor-pointer group relative">
-            <input type="radio" name="report_type" className="peer sr-only" />
-            <div className="bg-white dark:bg-[#2d1a1a] p-5 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm flex items-start gap-4 transition-all hover:border-gray-300 dark:hover:border-gray-700 hover:shadow-md peer-checked:border-primary peer-checked:bg-red-50 dark:peer-checked:bg-red-900/10">
-              <div className="w-12 h-12 rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 flex items-center justify-center flex-shrink-0 group-hover:bg-gray-200 dark:group-hover:bg-gray-700 transition-colors">
+            <input
+              type="radio"
+              name="report_type"
+              checked={reportType === 'blind'}
+              onChange={() => setReportType('blind')}
+              className="peer sr-only"
+            />
+            <div className={`p-5 rounded-2xl border-2 flex items-start gap-4 transition-all hover:shadow-md ${reportType === 'blind' ? 'bg-red-50 dark:bg-red-900/10 border-primary shadow-sm' : 'bg-white dark:bg-[#2d1a1a] border-gray-100 dark:border-gray-800'}`}>
+              <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${reportType === 'blind' ? 'bg-red-100 dark:bg-red-900/30 text-primary' : 'bg-gray-100 dark:bg-gray-800 text-gray-400'}`}>
                 <EyeOff className="w-6 h-6" />
               </div>
               <div className="flex-1 text-left">
@@ -79,8 +98,8 @@ export default function NewCountStep2() {
                   Nenhum dado de saldo será exibido. Maior rigor na conferência.
                 </p>
               </div>
-              <div className="w-6 h-6 rounded-full border-2 border-gray-300 dark:border-gray-700 flex items-center justify-center group-hover:border-primary transition-colors">
-                <div className="w-2.5 h-2.5 rounded-full bg-white opacity-0"></div>
+              <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${reportType === 'blind' ? 'border-primary bg-primary' : 'border-gray-300 dark:border-gray-700'}`}>
+                {reportType === 'blind' && <div className="w-2.5 h-2.5 rounded-full bg-white"></div>}
               </div>
             </div>
           </label>
@@ -97,7 +116,7 @@ export default function NewCountStep2() {
           size="xl"
           className="w-full"
           icon={<ArrowRight className="w-6 h-6" />}
-          onClick={() => navigate('/new-count/step-3')}
+          onClick={handleNext}
         >
           PRÓXIMO PASSO
         </Button>

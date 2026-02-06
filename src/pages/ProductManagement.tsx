@@ -1,16 +1,66 @@
+import { useEffect, useState } from 'react';
 import MainLayout from '../layouts/MainLayout';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import { Search, Plus, Edit3, Trash2, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { supabase } from '../lib/supabase';
+
+interface Product {
+  id: string;
+  name: string;
+  sku: string;
+  logistics_rules?: any;
+}
 
 export default function ProductManagement() {
-  const products = [
-    { name: 'Detergente Líquido 500ml', sku: 'DET-500-L', pvsL: '10 Lastros', LvsU: '5 Pacs' },
-    { name: 'Shampoo Reparador 300ml', sku: 'SHAM-REP-300', pvsL: '12 Lastros', LvsU: '8 Caixas' },
-    { name: 'Papel Higiênico Folha Dupla', sku: 'PAP-HIG-12R', pvsL: '5 Lastros', LvsU: '4 Fardos' },
-    { name: 'Amaciante Concentrado 1L', sku: 'AMA-CON-1L', missing: true },
-  ];
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchProducts();
+  }, []);
+
+  async function fetchProducts() {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('products')
+      .select(`
+        id,
+        name,
+        sku,
+        logistics_rules (
+          units_per_package,
+          packages_per_layer,
+          layers_per_pallet,
+          unit_measure
+        )
+      `)
+      .order('name');
+
+    if (error) {
+      console.error('Error fetching products:', error);
+    } else {
+      // Handle the fact that logistics_rules might come back as an array
+      const mapped = (data || []).map((p: any) => ({
+        ...p,
+        logistics_rules: Array.isArray(p.logistics_rules) ? p.logistics_rules[0] : p.logistics_rules
+      }));
+      setProducts(mapped);
+    }
+    setLoading(false);
+  }
+
+  async function deleteProduct(id: string) {
+    if (!confirm('Tem certeza que deseja excluir este produto?')) return;
+
+    const { error } = await supabase.from('products').delete().eq('id', id);
+    if (error) {
+      alert('Erro ao excluir produto');
+    } else {
+      fetchProducts();
+    }
+  }
 
   return (
     <MainLayout title="Gerenciamento de Produtos" subtitle="Painel de Auditoria de Regras Logísticas">
@@ -47,48 +97,55 @@ export default function ProductManagement() {
         </div>
 
         <div className="divide-y divide-gray-100 dark:divide-gray-800">
-          {products.map((product) => (
-            <div
-              key={product.sku}
-              className={`grid grid-cols-1 md:grid-cols-[2fr_1fr_1.2fr_1.2fr_80px] items-center px-6 py-4 hover:bg-gray-50 dark:hover:bg-[#3a2024]/20 transition-colors ${product.missing ? 'bg-red-50/30 dark:bg-red-900/10' : ''}`}
-            >
-              <div className="text-sm font-bold text-gray-900 dark:text-white truncate pr-4">{product.name}</div>
-              <div className="text-xs font-mono bg-gray-100 dark:bg-black/20 px-2 py-0.5 rounded w-fit text-gray-500 my-2 md:my-0">{product.sku}</div>
+          {loading ? (
+            <div className="p-10 text-center text-gray-500">Carregando produtos...</div>
+          ) : products.length === 0 ? (
+            <div className="p-10 text-center text-gray-500">Nenhum produto cadastrado.</div>
+          ) : products.map((product) => {
+            const hasRules = product.logistics_rules && product.logistics_rules.units_per_package > 0;
+            return (
+              <div
+                key={product.id}
+                className={`grid grid-cols-1 md:grid-cols-[2fr_1fr_1.2fr_1.2fr_80px] items-center px-6 py-4 hover:bg-gray-50 dark:hover:bg-[#3a2024]/20 transition-colors ${!hasRules ? 'bg-red-50/30 dark:bg-red-900/10' : ''}`}
+              >
+                <div className="text-sm font-bold text-gray-900 dark:text-white truncate pr-4">{product.name}</div>
+                <div className="text-xs font-mono bg-gray-100 dark:bg-black/20 px-2 py-0.5 rounded w-fit text-gray-500 my-2 md:my-0">{product.sku}</div>
 
-              {product.missing ? (
-                <div className="md:col-span-2 flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4 text-amber-500" />
-                  <span className="text-xs font-bold text-amber-600 uppercase">Regra não configurada</span>
-                  <Link to="/product/registry" className="text-primary text-[11px] font-black underline ml-2">Configurar Agora</Link>
+                {!hasRules ? (
+                  <div className="md:col-span-2 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-500" />
+                    <span className="text-xs font-bold text-amber-600 uppercase">Regra não configurada</span>
+                    <Link to={`/product/registry?id=${product.id}`} className="text-primary text-[11px] font-black underline ml-2">Configurar Agora</Link>
+                  </div>
+                ) : (
+                  <>
+                    <div className="text-sm">
+                      <span className="text-gray-500">1 Pallet =</span>
+                      <span className="font-bold text-primary ml-1">{product.logistics_rules?.layers_per_pallet} Lastros</span>
+                    </div>
+                    <div className="text-sm">
+                      <span className="text-gray-500">1 Lastro =</span>
+                      <span className="font-bold text-primary ml-1">{product.logistics_rules?.packages_per_layer} Pacotes</span>
+                    </div>
+                  </>
+                )}
+
+                <div className="flex justify-end gap-1 mt-3 md:mt-0">
+                  <Link to={`/product/registry?id=${product.id}`} className="p-1.5 text-gray-400 hover:text-primary transition-colors">
+                    <Edit3 className="w-4 h-4" />
+                  </Link>
+                  <button onClick={() => deleteProduct(product.id)} className="p-1.5 text-gray-400 hover:text-red-600 transition-colors">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
-              ) : (
-                <>
-                  <div className="text-sm">
-                    <span className="text-gray-500">1 Pallet =</span>
-                    <span className="font-bold text-primary ml-1">{product.pvsL}</span>
-                  </div>
-                  <div className="text-sm">
-                    <span className="text-gray-500">1 Lastro =</span>
-                    <span className="font-bold text-primary ml-1">{product.LvsU}</span>
-                  </div>
-                </>
-              )}
-
-              <div className="flex justify-end gap-1 mt-3 md:mt-0">
-                <button className="p-1.5 text-gray-400 hover:text-primary transition-colors">
-                  <Edit3 className="w-4 h-4" />
-                </button>
-                <button className="p-1.5 text-gray-400 hover:text-red-600 transition-colors">
-                  <Trash2 className="w-4 h-4" />
-                </button>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </Card>
 
       <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mt-6 px-2">
-        <p className="text-xs text-gray-500 font-medium">Mostrando 4 de 128 produtos</p>
+        <p className="text-xs text-gray-500 font-medium">Mostrando {products.length} produtos</p>
         <nav className="flex gap-1">
           <button className="p-2 rounded border border-gray-200 dark:border-gray-800 bg-white dark:bg-[#2d1a1a] text-gray-600 hover:bg-gray-50">
             <ChevronLeft className="w-4 h-4" />
